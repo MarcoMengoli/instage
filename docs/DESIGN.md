@@ -109,6 +109,28 @@ Driver previsti:
 
 La mappa `universo → driver` è configurabile a runtime.
 
+### Autonomia e resilienza (requisito chiave)
+
+Il server è l'unica fonte di verità e **non dipende mai dai client**: quello che è
+"in onda" (scena, chase, cue, master) continua identico se i client si disconnettono,
+il Wi-Fi cade o l'app crasha. Regole vincolanti per tutta l'implementazione:
+
+1. **Il render loop non tocca la rete.** Gira su thread dedicato e legge solo lo stato
+   dell'engine; nessuna chiamata di rete/DB/disco sul percorso caldo.
+2. **Disconnessione client = nessun cambiamento di stato.** Scene, chase e override
+   attivi restano attivi; niente "release" implicito alla disconnessione.
+3. **Backpressure WS**: un client lento o bloccato viene scollegato, mai rallentare
+   o bloccare l'engine per aspettarlo.
+4. **Ripresa dopo riavvio**: lo stato attivo (scena/chase/cue corrente, master,
+   blackout) è persistito su disco in modo debounced; al riavvio il server riprende
+   l'ultimo look entro pochi secondi. Con `systemd Restart=always` anche un crash
+   totale si traduce in una breve interruzione, non in buio permanente.
+5. **Isolamento dei panic**: un panic in un handler API/WS non deve toccare l'engine;
+   l'engine stesso è supervisionato e in caso di errore viene ricreato ripartendo
+   dallo stato persistito.
+6. **Errori driver (es. USB scollegato)**: retry con backoff e riapertura del device;
+   l'engine continua a girare e lo stato di salute è esposto ai client via WS.
+
 ## 5. API
 
 ### REST (configurazione, CRUD)
@@ -191,6 +213,8 @@ instage/
 ## 7. Piano a fasi
 
 Ogni fase termina con qualcosa di usabile a un concerto vero.
+Il piano operativo dettagliato, con test e acceptance criteria per ogni issue,
+è in [`docs/issues/`](issues/README.md).
 
 - **Fase 1 — Fondamenta** ✅ *criterio: accendo e spengo luci dal telefono*
   Server Rust: stato universo, driver FT232R, render loop, patch minima a mano (JSON),
